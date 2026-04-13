@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scorebug OBS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: transparent !important;
+    width: 100%; height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 16px;
+    font-family: 'Arial Black', 'Arial Bold', Gadget, sans-serif;
+    gap: 10px;
+    transform: scale(2);
+    transform-origin: top left;
+  }
+
+  #bug {
+    display: flex;
+    align-items: stretch;
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.7);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity .4s ease, transform .4s ease;
+  }
+  #bug.ready { opacity: 1; transform: translateY(0); }
+
+  .team-block {
+    padding: 14px 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    width: 90px;
+    flex-shrink: 0;
+  }
+  .team-abbr  { font-size: 13px; font-weight: 900; letter-spacing: 1px; line-height: 1; color: #fff; }
+  .team-score { font-size: 30px; font-weight: 900; line-height: 1.1; color: #fff; }
+  .team-abbr.light, .team-score.light { color: #000; }
+
+  .center-block {
+    background: #fff;
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 7px 14px;
+    min-width: 180px;
+  }
+  .period-wrap {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 3px; min-width: 36px;
+  }
+  .period-label { font-size: 11px; font-weight: 900; color: #111; letter-spacing: .5px; white-space: nowrap; }
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 7px #22c55e;
+    animation: blink 1.4s infinite; display: none;
+  }
+  .live-dot.on { display: block; }
+  .live-dot.timeout {
+    display: block;
+    background: #f59e0b;
+    box-shadow: 0 0 7px #f59e0b;
+    animation: none;
+  }
+
+  .logo-zone { width: 64px; height: 38px; flex-shrink: 0; }
+
+  .clock-wrap { display: flex; align-items: center; justify-content: center; min-width: 46px; }
+  .clock {
+    font-size: 19px; font-weight: 900; color: #111;
+    letter-spacing: 1px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── SYNC PANEL ── */
+  #sync-panel {
+    background: rgba(0,0,0,0.85); border-radius: 10px;
+    padding: 12px 14px; backdrop-filter: blur(4px);
+    transition: opacity .3s; width: 380px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #sync-panel.hidden { opacity: 0; pointer-events: none; }
+
+  .sync-row { display: flex; align-items: center; gap: 8px; }
+  .sync-label { font-size: 10px; color: #777; letter-spacing: 1.5px; font-family: Arial, sans-serif; white-space: nowrap; }
+
+  /* Period selector */
+  .period-btns { display: flex; gap: 5px; flex: 1; }
+  .period-btn {
+    flex: 1; padding: 5px 0; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 5px; color: #888; font-size: 10px; font-weight: 900;
+    font-family: 'Arial Black', sans-serif; cursor: pointer; letter-spacing: .5px;
+    transition: all .1s;
+  }
+  .period-btn:hover { background: #333; color: #ccc; }
+  .period-btn.active { background: #fff; border-color: #fff; color: #000; }
+
+  /* Time input row */
+  .time-input-wrap {
+    display: flex; align-items: center; gap: 6px; flex: 1;
+  }
+  .time-field {
+    background: #1a1a1a; border: 1px solid #444; border-radius: 5px;
+    color: #fff; font-size: 18px; font-weight: 900;
+    font-family: 'Arial Black', sans-serif;
+    width: 52px; text-align: center; padding: 4px 0;
+    outline: none;
+  }
+  .time-field:focus { border-color: #888; }
+  .time-sep { font-size: 18px; font-weight: 900; color: #555; }
+
+  .sync-nudge-btn {
+    background: #2a2a2a; border: 1px solid #444; border-radius: 5px;
+    color: #aaa; font-size: 10px; font-weight: 900;
+    padding: 4px 8px; cursor: pointer; font-family: Arial, sans-serif;
+    white-space: nowrap;
+  }
+  .sync-nudge-btn:hover { background: #3a3a3a; }
+
+  #set-sync-btn {
+    background: #22c55e; border: none; border-radius: 6px;
+    color: #000; font-size: 11px; font-weight: 900;
+    font-family: 'Arial Black', sans-serif; letter-spacing: .5px;
+    padding: 7px 14px; cursor: pointer; white-space: nowrap;
+    transition: background .1s;
+  }
+  #set-sync-btn:hover { background: #16a34a; }
+
+  #sync-status {
+    font-size: 10px; color: #555; font-family: Arial, sans-serif;
+    letter-spacing: .5px; text-align: center;
+  }
+  #sync-status.active { color: #22c55e; }
+
+  #reset-btn {
+    background: transparent; border: 1px solid #333; border-radius: 4px;
+    color: #555; font-size: 9px; font-family: Arial, sans-serif;
+    cursor: pointer; padding: 3px 7px;
+  }
+  #reset-btn:hover { color: #bbb; border-color: #666; }
+  #toggle-sync {
+    background: #1a1a1a; border: 1px solid #333; border-radius: 5px;
+    color: #555; font-size: 9px; letter-spacing: 1px;
+    padding: 4px 8px; cursor: pointer; font-family: Arial, sans-serif;
+  }
+  #toggle-sync:hover { color: #aaa; border-color: #555; }
+  #show-sync {
+    font-size: 9px; color: #333; font-family: Arial, sans-serif;
+    letter-spacing: 1px; cursor: pointer; background: none; border: none;
+    padding: 0; display: none;
+  }
+  #show-sync.visible { display: block; }
+  #show-sync:hover { color: #888; }
+
+  @keyframes blink { 0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(.8);} }
+  @keyframes scoreFlash { 0%{filter:brightness(1);}30%{filter:brightness(2.4);}100%{filter:brightness(1);} }
+  .flash { animation: scoreFlash .6s ease-out; }
+</style>
+</head>
+<body>
+
+<div id="bug">
+  <div class="team-block" id="home-block">
+    <div class="team-abbr" id="home-abbr">–</div>
+    <div class="team-score" id="home-score">0</div>
+  </div>
+  <div class="center-block">
+    <div class="period-wrap">
+      <div class="period-label" id="period-label">–</div>
+      <div class="live-dot" id="live-dot"></div>
+    </div>
+    <div class="logo-zone"></div>
+    <div class="clock-wrap">
+      <div class="clock" id="clock">–</div>
+    </div>
+  </div>
+  <div class="team-block" id="away-block">
+    <div class="team-abbr" id="away-abbr">–</div>
+    <div class="team-score" id="away-score">0</div>
+  </div>
+</div>
+
+<div id="sync-panel" class="hidden">
+  <!-- Row 1: label + period selector + hide -->
+  <div class="sync-row">
+    <span class="sync-label">TV SYNC</span>
+    <div class="period-btns">
+      <button class="period-btn active" data-period="1">Q1</button>
+      <button class="period-btn" data-period="2">Q2</button>
+      <button class="period-btn" data-period="3">Q3</button>
+      <button class="period-btn" data-period="4">Q4</button>
+      <button class="period-btn" data-period="5">OT</button>
+    </div>
+    <button id="toggle-sync">HIDE</button>
+  </div>
+
+  <!-- Row 2: time input + nudge buttons + set -->
+  <div class="sync-row">
+    <span class="sync-label">TIME</span>
+    <div class="time-input-wrap">
+      <input class="time-field" id="sync-mins" type="number" min="0" max="12" value="12" />
+      <span class="time-sep">:</span>
+      <input class="time-field" id="sync-secs" type="number" min="0" max="59" value="00" />
+    </div>
+    <button class="sync-nudge-btn" id="nudge-minus5">−5s</button>
+    <button class="sync-nudge-btn" id="nudge-plus5">+5s</button>
+    <button id="reset-btn">RESET</button>
+    <button id="set-sync-btn">SET SYNC</button>
+  </div>
+
+  <!-- Row 3: status -->
+  <div id="sync-status">Enter the time showing on your TV then hit SET SYNC</div>
+</div>
+<button id="show-sync" class="visible">▸ SYNC</button>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║                        ★ SCOREBUG SETTINGS ★                    ║
+// ║                  ← Edit these lines to change the game →         ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║                                                                  ║
+// ║  LEAGUE   →  "nba"  or  "nhl"                                   ║
+// ║                                                                  ║
+// ║  TEAM     →  3-letter team code to auto-find that team's game    ║
+// ║              Leave blank "" to just use GAME_INDEX instead       ║
+// ║                                                                  ║
+// ║  NBA codes:  ATL BOS BKN CHA CHI CLE DAL DEN DET GSW            ║
+// ║              HOU IND LAC LAL MEM MIA MIL MIN NOP NYK            ║
+// ║              OKC ORL PHI PHX POR SAC SAS TOR UTA WAS            ║
+// ║                                                                  ║
+// ║  NHL codes:  ANA BUF CGY CAR COL CBJ EDM FLA LAK MTL            ║
+// ║              NSH NJD NYI NYR OTT PIT SEA SJS STL TBL            ║
+// ║              VAN VGK WSH WPG                                     ║
+// ║                                                                  ║
+// ║  GAME_INDEX → if TEAM is blank, picks game by slot:             ║
+// ║               0 = first game of the day, 1 = second, etc.       ║
+// ║                                                                  ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+const LEAGUE     = "nba";   // ← CHANGE ME:  "nba"  or  "nhl"
+const TEAM       = "phx";      // ← CHANGE ME:  e.g. "PHI"  or leave blank ""
+const GAME_INDEX = 0;       // ← CHANGE ME:  0, 1, 2 ... (ignored if TEAM is set)
+
+// ─── TEAM COLORS ─────────────────────────────────────────────────
+const COLORS = {
+  ATL:"#E03A3E",BOS:"#007A33",BKN:"#000000",CHA:"#1D1160",CHI:"#CE1141",
+  CLE:"#860038",DAL:"#00538C",DEN:"#0E2240",DET:"#C8102E",GSW:"#1D428A",
+  HOU:"#CE1141",IND:"#002D62",LAC:"#C8102E",LAL:"#552583",MEM:"#5D76A9",
+  MIA:"#98002E",MIL:"#00471B",MIN:"#0C2340",NOP:"#0C2340",NYK:"#F58426",
+  OKC:"#007AC1",ORL:"#0077C0",PHI:"#C4122F",PHX:"#1D1160",POR:"#E03A3E",
+  SAC:"#5A2D81",SAS:"#8A8D8F",TOR:"#CE1141",UTA:"#002B5C",WAS:"#002B5C",
+  ANA:"#F47A38",BUF:"#003087",CGY:"#C8102E",CAR:"#CC0000",COL:"#6F263D",
+  CBJ:"#002654",EDM:"#FF4C00",FLA:"#C8102E",LAK:"#111111",MTL:"#AF1E2D",
+  NSH:"#FFB81C",NJD:"#CE1141",NYI:"#00539B",NYR:"#0038A8",OTT:"#C52032",
+  PIT:"#FCB514",SEA:"#001628",SJS:"#006D75",STL:"#002F87",TBL:"#002868",
+  VAN:"#00205B",VGK:"#B4975A",WSH:"#C8102E",WPG:"#041E42",
+};
+const LIGHT_TEAMS = new Set(["NSH","PIT"]);
+function teamColor(a) { return COLORS[a] ?? "#222"; }
+function isLight(a)   { return LIGHT_TEAMS.has(a); }
+
+const NBA_MAP = { GS:"GSW",NO:"NOP",NY:"NYK",SA:"SAS",WSH:"WAS",UTH:"UTA" };
+const NHL_MAP = { TB:"TBL",NJ:"NJD",SJ:"SJS",LA:"LAK",CLB:"CBJ" };
+function normalize(raw, league) {
+  const u = (raw||"").toUpperCase();
+  return (league==="nba" ? NBA_MAP[u] : NHL_MAP[u]) ?? u;
+}
+function periodLabel(p, league) {
+  if (!p) return "–";
+  if (league==="nhl") return ["","1ST","2ND","3RD","OT","SO"][p] ?? "OT";
+  return p<=4 ? `Q${p}` : p===5 ? "OT" : `${p-4}OT`;
+}
+function parseClockToSeconds(str) {
+  if (!str) return null;
+  const m = str.match(/^(\d+):(\d{2})$/);
+  if (m) return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  const s = parseFloat(str);
+  return isNaN(s) ? null : Math.floor(s);
+}
+function formatClock(s) {
+  if (s === null || s < 0) return "0:00";
+  return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,"0")}`;
+}
+
+// ─── DOM ─────────────────────────────────────────────────────────
+const bug         = document.getElementById("bug");
+const homeBlock   = document.getElementById("home-block");
+const awayBlock   = document.getElementById("away-block");
+const homeAbbrEl  = document.getElementById("home-abbr");
+const awayAbbrEl  = document.getElementById("away-abbr");
+const homeScoreEl = document.getElementById("home-score");
+const awayScoreEl = document.getElementById("away-score");
+const periodEl    = document.getElementById("period-label");
+const clockEl     = document.getElementById("clock");
+const liveDot     = document.getElementById("live-dot");
+const syncPanel   = document.getElementById("sync-panel");
+const showSyncBtn = document.getElementById("show-sync");
+
+// ─── STATE ───────────────────────────────────────────────────────
+let delaySecs     = 0;
+let prevHomeScore = null;
+let prevAwayScore = null;
+
+// ─── CLOCK ───────────────────────────────────────────────────────
+const clock = {
+  secs:            null,
+  tickId:          null,
+  lastApiClock:    null,
+  lastApiClockTs:  null,  // wall time when we last saw a NEW clock value
+  frozen:          false,
+};
+
+// How many seconds of real time can pass with no API clock change
+// before we call it a stoppage. 2x the fetch interval is safe.
+const STOPPAGE_THRESHOLD_MS = 20000; // 20 seconds
+
+function stopTick() {
+  if (clock.tickId) { clearInterval(clock.tickId); clock.tickId = null; }
+  clock.frozen = true;
+}
+
+function startTick(initialSecs) {
+  stopTick();
+  clock.secs   = initialSecs;
+  clock.frozen = false;
+  clockEl.textContent = formatClock(clock.secs);
+  clock.tickId = setInterval(() => {
+    if (clock.secs === null || clock.secs <= 0) return;
+    clock.secs--;
+    clockEl.textContent = formatClock(clock.secs);
+  }, 1000);
+}
+
+// ─── DELAY QUEUE ─────────────────────────────────────────────────
+const queue = [];
+
+function pushSnapshot(snap) {
+  queue.push({ ts: Date.now(), snap });
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  while (queue.length && queue[0].ts < cutoff) queue.shift();
+}
+
+function getDelayedSnap() {
+  if (!queue.length) return null;
+  const target = Date.now() - delaySecs * 1000;
+  let best = null;
+  for (const e of queue) {
+    if (e.ts <= target) best = e.snap;
+  }
+  return best;
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────
+function render(snap) {
+  const { home, away, homeScore, awayScore, period,
+          clockStr, clockSecs, isLive, isFinal, isHalftime, league } = snap;
+
+  homeBlock.style.background = teamColor(home);
+  awayBlock.style.background = teamColor(away);
+
+  homeAbbrEl.textContent  = home;
+  awayAbbrEl.textContent  = away;
+  const hli = isLight(home), ali = isLight(away);
+  homeAbbrEl.className  = "team-abbr"  + (hli ? " light" : "");
+  homeScoreEl.className = "team-score" + (hli ? " light" : "");
+  awayAbbrEl.className  = "team-abbr"  + (ali ? " light" : "");
+  awayScoreEl.className = "team-score" + (ali ? " light" : "");
+
+  // Score flash
+  const changed = prevHomeScore !== null &&
+    (prevHomeScore !== homeScore || prevAwayScore !== awayScore);
+  if (changed) {
+    bug.classList.remove("flash");
+    void bug.offsetWidth;
+    bug.classList.add("flash");
+    setTimeout(() => bug.classList.remove("flash"), 650);
+  }
+  prevHomeScore = homeScore;
+  prevAwayScore = awayScore;
+  homeScoreEl.textContent = homeScore;
+  awayScoreEl.textContent = awayScore;
+
+  // Period + clock
+  if (isFinal) {
+    periodEl.textContent = "FINAL";
+    clockEl.textContent  = "–";
+    liveDot.className = "live-dot";
+    stopTick(); clock.secs = null; clock.lastApiClock = null; clock.lastApiClockTs = null;
+
+  } else if (isHalftime) {
+    periodEl.textContent = "HALF";
+    clockEl.textContent  = "–";
+    liveDot.className = "live-dot";
+    stopTick(); clock.secs = null; clock.lastApiClock = null; clock.lastApiClockTs = null;
+
+  } else if (isLive) {
+    periodEl.textContent = periodLabel(period, league);
+
+    if (clockStr !== clock.lastApiClock) {
+      // API gave us a new clock value — play is running, re-anchor
+      clock.lastApiClock   = clockStr;
+      clock.lastApiClockTs = Date.now();
+      if (clockSecs !== null) {
+        startTick(clockSecs);
+      } else {
+        stopTick();
+        clockEl.textContent = "–";
+      }
+    } else {
+      // Same clock value — check how long it's been stuck
+      const elapsed = Date.now() - (clock.lastApiClockTs ?? Date.now());
+      if (elapsed >= STOPPAGE_THRESHOLD_MS && !clock.frozen) {
+        // Real time has passed but API clock hasn't moved — stoppage
+        // Snap back to the API value before freezing so drift is corrected
+        clock.secs = clockSecs;
+        clockEl.textContent = formatClock(clock.secs);
+        stopTick();
+      }
+    }
+
+    // Update dot based on frozen state
+    liveDot.className = clock.frozen ? "live-dot timeout" : "live-dot on";
+
+  } else {
+    periodEl.textContent = "PRE";
+    clockEl.textContent  = "–";
+    liveDot.className = "live-dot";
+    stopTick(); clock.secs = null; clock.lastApiClock = null; clock.lastApiClockTs = null;
+  }
+
+  bug.classList.add("ready");
+}
+
+// ─── FETCH ───────────────────────────────────────────────────────
+async function fetchGame() {
+  try {
+    const sport = LEAGUE === "nba" ? "basketball/nba" : "hockey/nhl";
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/${sport}/scoreboard`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) throw new Error(res.status);
+    const json = await res.json();
+    const events = json.events ?? [];
+    if (!events.length) return;
+
+    let ev;
+    if (TEAM) {
+      ev = events.find(e =>
+        e.competitions?.[0]?.competitors?.some(
+          c => normalize(c.team?.abbreviation, LEAGUE) === TEAM.toUpperCase()
+        )
+      );
+    }
+    if (!ev) ev = events[GAME_INDEX] ?? events[0];
+    if (!ev) return;
+
+    const comp   = ev.competitions?.[0];
+    const homeC  = comp?.competitors?.find(c => c.homeAway === "home");
+    const awayC  = comp?.competitors?.find(c => c.homeAway === "away");
+    const status = comp?.status;
+    const state  = status?.type?.name ?? "";
+    const clockStr = status?.displayClock ?? null;
+    const isLive   = ["STATUS_IN_PROGRESS","STATUS_FIRST_HALF","STATUS_SECOND_HALF"].includes(state);
+
+    pushSnapshot({
+      league: LEAGUE,
+      home:   normalize(homeC?.team?.abbreviation, LEAGUE),
+      away:   normalize(awayC?.team?.abbreviation, LEAGUE),
+      homeScore:  parseInt(homeC?.score ?? "0", 10),
+      awayScore:  parseInt(awayC?.score ?? "0", 10),
+      period:     status?.period ?? 0,
+      clockStr:   isLive ? clockStr : null,
+      clockSecs:  isLive ? parseClockToSeconds(clockStr) : null,
+      isLive,
+      isFinal:    state.includes("FINAL"),
+      isHalftime: state === "STATUS_HALFTIME",
+    });
+  } catch(e) {
+    console.warn("Fetch error:", e);
+  }
+}
+
+// ─── DISPLAY TICK ────────────────────────────────────────────────
+// Runs every second — grabs the correctly delayed snapshot and renders.
+// The clock interval runs independently and is only reset by render
+// when a genuinely new API clock value arrives.
+function displayTick() {
+  const snap = getDelayedSnap();
+  if (snap) render(snap);
+}
+
+// ─── SMART SYNC CONTROLS ─────────────────────────────────────────
+let selectedPeriod = 1;
+
+// Period buttons
+document.querySelectorAll(".period-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedPeriod = parseInt(btn.dataset.period);
+  });
+});
+
+// Nudge buttons adjust the minutes/seconds inputs
+document.getElementById("nudge-minus5").addEventListener("click", () => {
+  let total = getMinsInput() * 60 + getSecsInput() - 5;
+  total = Math.max(0, total);
+  setTimeInputs(Math.floor(total / 60), total % 60);
+});
+document.getElementById("nudge-plus5").addEventListener("click", () => {
+  let total = getMinsInput() * 60 + getSecsInput() + 5;
+  setTimeInputs(Math.floor(total / 60), total % 60);
+});
+
+function getMinsInput() { return parseInt(document.getElementById("sync-mins").value) || 0; }
+function getSecsInput() { return parseInt(document.getElementById("sync-secs").value) || 0; }
+function setTimeInputs(m, s) {
+  document.getElementById("sync-mins").value = m;
+  document.getElementById("sync-secs").value = String(s).padStart(2, "0");
+}
+
+// SET SYNC — calculate delay from TV time vs live API
+document.getElementById("set-sync-btn").addEventListener("click", () => {
+  // Get the most recent live snapshot from the queue (undelayed)
+  if (!queue.length) {
+    syncStatus.textContent = "⚠ No data yet — wait for first fetch";
+    return;
+  }
+
+  // Find the latest snapshot
+  const latest = queue[queue.length - 1].snap;
+  if (!latest.isLive) {
+    syncStatus.textContent = "⚠ Game is not live yet";
+    return;
+  }
+
+  // Convert TV input to seconds
+  const tvSecs = getMinsInput() * 60 + getSecsInput();
+
+  // Convert live API clock to seconds
+  const liveSecs = latest.clockSecs ?? 0;
+  const livePeriod = latest.period ?? 1;
+
+  // Total game seconds elapsed at a given period + clock
+  // NBA: each quarter = 720s, OT = 300s
+  function gameElapsed(period, secs) {
+    const quarterLen = 720;
+    const otLen = 300;
+    if (period <= 4) return (period - 1) * quarterLen + (quarterLen - secs);
+    return 4 * quarterLen + (period - 5) * otLen + (otLen - secs);
+  }
+
+  const liveElapsed = gameElapsed(livePeriod, liveSecs);
+  const tvElapsed   = gameElapsed(selectedPeriod, tvSecs);
+  const diff        = liveElapsed - tvElapsed;
+
+  if (diff < 0) {
+    syncStatus.textContent = "⚠ TV time is ahead of live — check your input";
+    return;
+  }
+
+  delaySecs = diff;
+  syncStatus.textContent = `✓ Synced — ${diff}s delay`;
+  syncStatus.classList.add("active");
+  setTimeout(() => syncStatus.classList.remove("active"), 3000);
+});
+
+document.getElementById("reset-btn").addEventListener("click", () => {
+  delaySecs = 0;
+  setTimeInputs(12, 0);
+  syncStatus.textContent = "Delay reset to 0";
+  syncStatus.classList.remove("active");
+});
+
+document.getElementById("toggle-sync").addEventListener("click", () => {
+  syncPanel.classList.add("hidden"); showSyncBtn.classList.add("visible");
+});
+showSyncBtn.addEventListener("click", () => {
+  syncPanel.classList.remove("hidden"); showSyncBtn.classList.remove("visible");
+});
+
+const syncStatus = document.getElementById("sync-status");
+
+// ─── INIT ────────────────────────────────────────────────────────
+// Sync panel hidden by default — use OBS Interact or click ▸ SYNC to show
+syncPanel.classList.add("hidden");
+showSyncBtn.classList.add("visible");
+fetchGame();
+setInterval(fetchGame,    5000);
+setInterval(displayTick,  1000);
+</script>
+</body>
+</html>
